@@ -11,7 +11,7 @@ ASSET_CLASSES = {
     'Bonds': ['^IRX', '^FVX', '^TNX', '^TYX'],  # 3M, 5Y, 10Y, 30Y Treasury yields
     'Indices': ['^GSPC', '^DJI', '^IXIC', '^RUT'],  # S&P 500, Dow Jones, Nasdaq, Russell 2000
     'Commodities': ['CL=F', 'GC=F', 'NG=F', 'SI=F'],  # Crude Oil, Gold, Natural Gas, Silver
-    'Currencies': ['EURUSD=X', 'GBPUSD=X', 'JPYUSD=X', 'CNYUSD=X'],  # EUR/USD, GBP/USD, JPY/USD, CNY/USD
+    'Currencies': ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'USDCNY=X'],  # EUR/USD, GBP/USD, USD/JPY, USD/CNY
     'Crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD']  # Bitcoin, Ethereum, Solana
 }
 
@@ -31,8 +31,8 @@ TICKER_NAMES = {
     'SI=F': 'Silver',
     'EURUSD=X': 'EUR/USD',
     'GBPUSD=X': 'GBP/USD',
-    'JPYUSD=X': 'JPY/USD',
-    'CNYUSD=X': 'CNY/USD',
+    'USDJPY=X': 'USD/JPY',
+    'USDCNY=X': 'USD/CNY',
     'BTC-USD': 'Bitcoin',
     'ETH-USD': 'Ethereum',
     'SOL-USD': 'Solana'
@@ -53,7 +53,10 @@ def fetch_data(tickers, period='1y'):
     return data
 
 def normalize_data(data):
-    # Normalize to start at 100 for better scale comparison
+    # Normalize to start at 100 for better scale comparison, handling potential NaNs
+    first_row = data.iloc[0]
+    if first_row.isna().any():
+        data = data.fillna(method='ffill').fillna(method='bfill')  # Simple fill for normalization
     return (data / data.iloc[0]) * 100
 
 def compute_returns(data):
@@ -61,14 +64,16 @@ def compute_returns(data):
     return returns
 
 def plot_heatmap(corr_matrix, title):
-    fig, ax = plt.subplots(figsize=(8, 6))
+    num_assets = len(corr_matrix)
+    fig_size = (max(8, num_assets * 0.5), max(6, num_assets * 0.5))
+    fig, ax = plt.subplots(figsize=fig_size)
     sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', ax=ax, fmt=".2f", annot_kws={"size": 8})
     ax.set_title(title)
     st.pyplot(fig)
 
 def main():
     st.title("Simplified Market Dashboard")
-    st.markdown("An intuitive dashboard for tracking market assets. Select options in the sidebar to customize.")
+    st.markdown("An intuitive dashboard for tracking market assets. Select options in the sidebar to customize. View all selected assets in the 'All Assets' tab or per category.")
 
     # Sidebar for user inputs
     st.sidebar.header("Dashboard Settings")
@@ -83,10 +88,6 @@ def main():
         default=list(ASSET_CLASSES.keys())[:3]  # Default to first 3
     )
     
-    # Custom tickers input
-    custom_tickers = st.sidebar.text_input("Add Custom Tickers (comma-separated, e.g., AAPL, TSLA)")
-    custom_tickers_list = [t.strip() for t in custom_tickers.split(',') if t.strip()]
-    
     # Normalize option
     normalize = st.sidebar.checkbox("Normalize Charts (start at 100 for scale comparison)", value=True)
     
@@ -94,11 +95,10 @@ def main():
     all_tickers = []
     for cls in selected_classes:
         all_tickers.extend(ASSET_CLASSES[cls])
-    all_tickers.extend(custom_tickers_list)
     all_tickers = list(set(all_tickers))  # Remove duplicates
     
     if not all_tickers:
-        st.warning("Please select at least one asset class or add custom tickers.")
+        st.warning("Please select at least one asset class.")
         return
     
     # Fetch data
@@ -114,14 +114,36 @@ def main():
         data = normalize_data(data)
     
     # Display charts in tabs for better organization
-    tabs = st.tabs(selected_classes + (["Custom"] if custom_tickers_list else []))
+    tab_names = ["All Assets"] + selected_classes
+    tabs = st.tabs(tab_names)
     
-    tab_index = 0
+    # All Assets tab
+    with tabs[0]:
+        st.header("All Assets")
+        if not data.empty:
+            # Price Chart
+            st.subheader("Price/Yields Chart")
+            st.line_chart(data, use_container_width=True)
+            
+            # Correlation Heatmap
+            st.subheader("Correlation Heatmap")
+            returns = compute_returns(data)
+            if not returns.empty and len(returns.columns) > 1:
+                corr_matrix = returns.corr()
+                plot_heatmap(corr_matrix, "All Assets Correlation (Daily Returns)")
+            else:
+                st.warning("Insufficient data for correlation heatmap.")
+        else:
+            st.warning("No data available.")
+    
+    # Individual class tabs
+    tab_index = 1
     for cls in selected_classes:
         with tabs[tab_index]:
             st.header(cls)
             class_tickers = [t for t in all_tickers if t in ASSET_CLASSES[cls]]
-            class_data = data[[TICKER_NAMES.get(t, t) for t in class_tickers]]
+            class_names = [TICKER_NAMES.get(t, t) for t in class_tickers]
+            class_data = data[class_names]  # Select by renamed columns
             
             if not class_data.empty:
                 # Price Chart
@@ -139,26 +161,6 @@ def main():
             else:
                 st.warning(f"No data for {cls}.")
         tab_index += 1
-    
-    # Custom tab if any
-    if custom_tickers_list:
-        with tabs[tab_index]:
-            st.header("Custom Tickers")
-            custom_data = data[[TICKER_NAMES.get(t, t) for t in custom_tickers_list]]
-            
-            if not custom_data.empty:
-                st.subheader("Price Chart")
-                st.line_chart(custom_data, use_container_width=True)
-                
-                st.subheader("Correlation Heatmap")
-                returns = compute_returns(custom_data)
-                if not returns.empty and len(returns.columns) > 1:
-                    corr_matrix = returns.corr()
-                    plot_heatmap(corr_matrix, "Custom Tickers Correlation")
-                else:
-                    st.warning("Insufficient data for correlation heatmap.")
-            else:
-                st.warning("No data for custom tickers.")
 
 if __name__ == "__main__":
     main()
