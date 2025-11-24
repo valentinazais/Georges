@@ -54,10 +54,18 @@ def fetch_data(tickers, period='1y'):
 
 def normalize_data(data):
     # Normalize to start at 100 for better scale comparison, handling potential NaNs
-    first_row = data.iloc[0]
-    if first_row.isna().any():
-        data = data.fillna(method='ffill').fillna(method='bfill')  # Simple fill for normalization
+    data = data.fillna(method='ffill').fillna(method='bfill')
     return (data / data.iloc[0]) * 100
+
+def scale_to_fit(data):
+    # Scale each series to 0-100 based on its min and max
+    data = data.fillna(method='ffill').fillna(method='bfill')
+    data_min = data.min()
+    data_max = data.max()
+    data_range = data_max - data_min
+    # Avoid division by zero
+    data_range[data_range == 0] = 1
+    return 100 * (data - data_min) / data_range
 
 def compute_returns(data):
     returns = data.pct_change().dropna()
@@ -88,8 +96,12 @@ def main():
         default=list(ASSET_CLASSES.keys())[:3]  # Default to first 3
     )
     
-    # Normalize option
-    normalize = st.sidebar.checkbox("Normalize Charts (start at 100 for scale comparison)", value=True)
+    # Scaling mode
+    scaling_mode = st.sidebar.selectbox(
+        "Chart Scaling Mode",
+        ['None', 'Normalize to 100 (for performance comparison)', 'Scale to Fit (0-100 for shape visibility)'],
+        index=1  # Default to Normalize
+    )
     
     # Collect all selected tickers
     all_tickers = []
@@ -103,15 +115,18 @@ def main():
     
     # Fetch data
     with st.spinner("Fetching market data..."):
-        data = fetch_data(all_tickers, period=selected_period)
+        original_data = fetch_data(all_tickers, period=selected_period)
     
-    if data.empty:
+    if original_data.empty:
         st.error("No data available for the selected tickers and period.")
         return
     
-    # Normalize if selected
-    if normalize:
+    # Copy for plotting, apply scaling
+    data = original_data.copy()
+    if scaling_mode == 'Normalize to 100 (for performance comparison)':
         data = normalize_data(data)
+    elif scaling_mode == 'Scale to Fit (0-100 for shape visibility)':
+        data = scale_to_fit(data)
     
     # Display charts in tabs for better organization
     tab_names = ["All Assets"] + selected_classes
@@ -125,9 +140,9 @@ def main():
             st.subheader("Price/Yields Chart")
             st.line_chart(data, use_container_width=True)
             
-            # Correlation Heatmap
+            # Correlation Heatmap (using original data)
             st.subheader("Correlation Heatmap")
-            returns = compute_returns(data)
+            returns = compute_returns(original_data)
             if not returns.empty and len(returns.columns) > 1:
                 corr_matrix = returns.corr()
                 plot_heatmap(corr_matrix, "All Assets Correlation (Daily Returns)")
@@ -144,15 +159,16 @@ def main():
             class_tickers = [t for t in all_tickers if t in ASSET_CLASSES[cls]]
             class_names = [TICKER_NAMES.get(t, t) for t in class_tickers]
             class_data = data[class_names]  # Select by renamed columns
+            class_original = original_data[class_names]
             
             if not class_data.empty:
                 # Price Chart
                 st.subheader("Price/Yields Chart")
                 st.line_chart(class_data, use_container_width=True)
                 
-                # Correlation Heatmap
+                # Correlation Heatmap (using original data)
                 st.subheader("Correlation Heatmap")
-                returns = compute_returns(class_data)
+                returns = compute_returns(class_original)
                 if not returns.empty and len(returns.columns) > 1:
                     corr_matrix = returns.corr()
                     plot_heatmap(corr_matrix, f"{cls} Correlation (Daily Returns)")
