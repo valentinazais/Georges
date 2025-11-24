@@ -52,15 +52,36 @@ def fetch_data(tickers, period='1y'):
     
     # Handle single vs multiple tickers
     if len(tickers) == 1:
-        if 'Adj Close' in raw_data.columns:
-            data = raw_data['Adj Close'].to_frame(name=tickers[0])
+        # For single ticker, raw_data is a simple DataFrame
+        if isinstance(raw_data.columns, pd.MultiIndex):
+            # Sometimes even single ticker returns MultiIndex
+            if 'Adj Close' in raw_data.columns.get_level_values(0):
+                data = raw_data['Adj Close']
+            else:
+                data = raw_data['Close']
+            if isinstance(data, pd.Series):
+                data = data.to_frame(name=tickers[0])
         else:
-            data = raw_data['Close'].to_frame(name=tickers[0])
+            # Simple columns
+            if 'Adj Close' in raw_data.columns:
+                data = raw_data[['Adj Close']].copy()
+                data.columns = [tickers[0]]
+            elif 'Close' in raw_data.columns:
+                data = raw_data[['Close']].copy()
+                data.columns = [tickers[0]]
+            else:
+                # Fallback: use the entire dataframe
+                data = raw_data.copy()
     else:
-        if 'Adj Close' in raw_data.columns.get_level_values(0):
-            data = raw_data['Adj Close']
+        # Multiple tickers - MultiIndex columns
+        if isinstance(raw_data.columns, pd.MultiIndex):
+            if 'Adj Close' in raw_data.columns.get_level_values(0):
+                data = raw_data['Adj Close']
+            else:
+                data = raw_data['Close']
         else:
-            data = raw_data['Close']
+            # Shouldn't happen with multiple tickers, but handle it
+            data = raw_data.copy()
     
     data = data.dropna(how='all')
     return data
@@ -181,13 +202,16 @@ def main():
                 st.line_chart(data, use_container_width=True, height=500)
                 
                 # Correlation Heatmap
-                st.subheader("Correlation Heatmap (Daily Returns)")
-                returns = compute_returns(original_data)
-                if not returns.empty and len(returns.columns) > 1:
-                    corr_matrix = returns.corr()
-                    plot_heatmap(corr_matrix, "All Assets Correlation")
+                if len(all_selected_tickers) > 1:
+                    st.subheader("Correlation Heatmap (Daily Returns)")
+                    returns = compute_returns(original_data)
+                    if not returns.empty and len(returns.columns) > 1:
+                        corr_matrix = returns.corr()
+                        plot_heatmap(corr_matrix, "All Assets Correlation")
+                    else:
+                        st.warning("Insufficient data for correlation heatmap.")
                 else:
-                    st.warning("Insufficient data for correlation heatmap.")
+                    st.info("Select at least 2 tickers to view correlation heatmap.")
             else:
                 st.error("No data available for the selected tickers and period.")
         else:
@@ -262,6 +286,8 @@ def main():
                         plot_heatmap(corr_matrix, f"{cls} Correlation")
                     else:
                         st.warning("Insufficient data for correlation heatmap.")
+                else:
+                    st.info("Select at least 2 tickers to view correlation heatmap.")
             else:
                 st.error(f"No data available for {cls}.")
         
