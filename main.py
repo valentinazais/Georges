@@ -96,12 +96,11 @@ def main():
         default=list(ASSET_CLASSES.keys())[:3]  # Default to first 3
     )
     
-    # Scaling mode
-    scaling_mode = st.sidebar.selectbox(
-        "Chart Scaling Mode",
-        ['None', 'Normalize to 100 (for performance comparison)', 'Scale to Fit (0-100 for shape visibility)'],
-        index=1  # Default to Normalize
-    )
+    # Scaling options
+    st.sidebar.subheader("Chart Scaling Options")
+    st.sidebar.markdown("You can enable both options; normalization is applied first, then scale to fit.")
+    normalize = st.sidebar.checkbox("Normalize to 100 (for performance comparison)", value=True)
+    scale_fit = st.sidebar.checkbox("Scale to Fit (0-100 for shape visibility)", value=False)
     
     # Collect all selected tickers
     all_tickers = []
@@ -123,9 +122,9 @@ def main():
     
     # Copy for plotting, apply scaling
     data = original_data.copy()
-    if scaling_mode == 'Normalize to 100 (for performance comparison)':
+    if normalize:
         data = normalize_data(data)
-    elif scaling_mode == 'Scale to Fit (0-100 for shape visibility)':
+    if scale_fit:
         data = scale_to_fit(data)
     
     # Display charts in tabs for better organization
