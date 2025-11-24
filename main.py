@@ -14,7 +14,11 @@ ASSETS = {
 }
 
 def fetch_data(tickers, period='1y'):
-    data = yf.download(tickers, period=period)['Adj Close']
+    raw_data = yf.download(tickers, period=period, progress=False)
+    try:
+        data = raw_data['Adj Close']
+    except KeyError:
+        data = raw_data['Close']
     data = data.dropna(how='all')
     return data
 
